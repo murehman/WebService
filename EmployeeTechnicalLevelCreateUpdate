@@ -1,0 +1,219 @@
+/********************************************************************************************
+ * Description      : Webservice to fetch data from AS400 to salesforce. 
+ * @author          : Mushtaq (NL)
+ * @since           : 06-06-2016
+ * Copyright 2016 ABSI. All rights reserved.  
+ ********************************************************************************************/
+ /*
+ WebSerivce to create, update and delete record in EmployeeTraining object.
+    InnerClass EmployeeTechnicalLevelRequest recieves the request from AS400 through SOAP. 
+    This information is stored in EmployeeTechnicalLevelRequest object.
+
+    
+    Webservice Method is the method (webservice CreateUpdateEmployeeTechnicalLevel) which is called automatically 
+    when request is recieved. All the other methods are called from within this method.
+
+    Methods
+        EmployeeTechnicalLevelCreateUpdate: This method validates that userName, technicalLevel, education and result
+            fields in the request are not blank. In case of any blank value in these fields, it gives an error message and
+            code does not run further.In case no none of these fields are empty. It gives a sucess response.
+
+        CheckContactTrainingTechnicalLevelExist: This methods checks if information recieved in request like
+        
+            userName = Contact.Innovam_ID__c
+            technicalLevel = Employee_Technical_Level.Employee_Technical_Level_ID__c
+            education = Training.Training_ID__c
+            user with InnovamID exist in cantact, technicalLevel exists in EmployeeTechnicalLevel and education exists in 
+            Training objects. If any of them does not exist, it gives a specific error for every field. If all of them exist
+            than it give a success response.
+
+        checkIfEmployeeTechnicalLevelExits: 
+            This method checks if request recieved already exists in EmployeeTraining. It returns an
+            employeeTraining record if there already exists a rocord which can be deleted or updated. 
+            OR it returns an empty record in case there is no matching record in EmployeeTraining, this can be inserted into EmployeeTraining.
+
+*/
+
+global class EmployeeTechnicalLevelCreateUpdate{
+    private Static Contact contact = new Contact();
+    private Static Training__c training = new Training__c();
+    private Static Employee_Technical_Level__c employeeTechnicalLevel = new Employee_Technical_Level__c();
+
+
+    public static DTO_ServiceResponse validateEmployeeTechnicalLevelDetails(
+        EmployeeTechnicalLevelRequest request, DTO_ServiceResponse response) {
+   
+        if (String.isBlank(request.userName)){
+            return ERROR_HANDLER_ServiceResponse.putErrorCode(FALSE, ERROR_CODE_101, ERROR_MSG_101);
+        }
+        else if (String.isBlank(request.technicalLevel)){
+            return ERROR_HANDLER_ServiceResponse.putErrorCode(FALSE, ERROR_CODE_102, ERROR_MSG_102);
+        }
+        else if (String.isBlank(request.education)){
+            return ERROR_HANDLER_ServiceResponse.putErrorCode(FALSE, ERROR_CODE_103, ERROR_MSG_103);
+        }
+        else if (String.isBlank(request.result)){
+            return ERROR_HANDLER_ServiceResponse.putErrorCode(FALSE, ERROR_CODE_104, ERROR_MSG_104);
+        }
+        else{
+            return ERROR_HANDLER_ServiceResponse.putErrorCode(true, ERROR_CODE_0, ERROR_MSG_0);
+        }
+    }
+
+    public static DTO_ServiceResponse CheckContactTrainingTechnicalLevelExist(EmployeeTechnicalLevelRequest request, DTO_ServiceResponse response){
+        try{
+            contact = [SELECT id, Innovam_ID__c FROM Contact where Innovam_ID__c=:request.userName limit 1];
+            }catch(exception e){
+                e.getmessage();
+            }
+            if (String.isBlank(contact.Id)){
+                return ERROR_HANDLER_ServiceResponse.putErrorCode(FALSE, ERROR_CODE_105, ERROR_MSG_105);
+            }
+        else if (String.isNotBlank(contact.Id)){
+            try{
+                training = [SELECT id, Training_ID__c from Training__c where Training_ID__c=:request.education];
+                }catch(exception e){
+                    e.getmessage();
+                }
+                if (String.isBlank(training.Id)){
+                        return ERROR_HANDLER_ServiceResponse.putErrorCode(FALSE, ERROR_CODE_106, ERROR_MSG_106);  
+                }
+                else if (String.isNotBlank(training.Id)){
+                    try{
+                        employeeTechnicalLevel = [ SELECT Id, Employee_Technical_Level_ID__c, Contact__r.Innovam_ID__c
+                                                                        From Employee_Technical_Level__c
+                                                                        Where Contact__r.Innovam_ID__c = :request.userName
+                                                                        AND Employee_Technical_Level_ID__c = :request.technicalLevel];
+                        }catch(exception e){
+                            e.getmessage();
+                        }
+                        if(String.isBlank(employeeTechnicalLevel.Id)){
+                            return ERROR_HANDLER_ServiceResponse.putErrorCode(FALSE, ERROR_CODE_107, ERROR_MSG_107);    
+
+                        }else{
+                        return ERROR_HANDLER_ServiceResponse.putErrorCode(true, ERROR_CODE_0, ERROR_MSG_0);  
+                        }
+                }
+        }
+        return response;
+
+    }
+
+    public static Employee_Training__c checkIfEmployeeTechnicalLevelExits(EmployeeTechnicalLevelRequest request){
+        Employee_Training__c employeeTraning = new Employee_Training__c();
+        List<Employee_Training__c> employeeTrainings = [SELECT Id, Employee_Technical_Level__c, Training_Status__c, Training__c, Contact__c, 
+                                                                Contact__r.Innovam_ID__c, Training__r.Training_ID__c, 
+                                                                Employee_Technical_Level__r.Employee_Technical_Level_ID__c
+                                                FROM Employee_Training__c 
+                                                where Contact__r.Innovam_ID__c = :request.UserName 
+                                                AND Training__r.Training_ID__c = :request.Education 
+                                                AND Employee_Technical_Level__r.Employee_Technical_Level_ID__c = :request.TechnicalLevel];
+
+    if(!employeeTrainings.isEmpty() && employeeTrainings.size() == 1){ //toDO : check if size is necessary here
+         employeeTraning = employeeTrainings[0];
+
+    }
+        return employeeTraning;
+    } 
+    public static Employee_Training__c createEmployeeTraining(EmployeeTechnicalLevelRequest request){
+        Employee_Training__c employeeTraning = new Employee_Training__c();
+        employeeTraning.Contact__c = contact.Id;
+        employeeTraning.Employee_Technical_Level__c = employeeTechnicalLevel.Id;
+        employeeTraning.Training__c = training.Id;
+        employeeTraning.Training_Status__c = request.result;
+        return employeeTraning;
+    }
+
+
+    webservice static DTO_ServiceResponse CreateUpdateEmployeeTechnicalLevel(EmployeeTechnicalLevelRequest request){
+       DTO_ServiceResponse response = new DTO_ServiceResponse();
+       response = validateEmployeeTechnicalLevelDetails(request, response);
+       try{
+            if(response.isSuccess){
+                response = CheckContactTrainingTechnicalLevelExist(request, response);
+                Employee_Training__c employeeTraning = new Employee_Training__c();
+            // //check if the employeeTraining exits already;
+                if(response.isSuccess){
+                    try{ 
+                        employeeTraning = checkIfEmployeeTechnicalLevelExits(request);
+                    }catch(exception e){
+                        e.getmessage();
+                    }
+                    if(String.isBlank(employeeTraning.Id) && request.action.containsOnly('A')){
+                        employeeTraning = createEmployeeTraining(request);
+                        insert employeeTraning;
+                    }
+                    else if(String.isBlank(employeeTraning.Id) && request.action.containsOnly('U')){
+                        return ERROR_HANDLER_ServiceResponse.putErrorCode(FALSE, ERROR_CODE_108, ERROR_MSG_108);
+                    }
+                    else if (String.isNotBlank(employeeTraning.Id) && request.action.containsOnly('U')){
+                        employeeTraning = checkIfEmployeeTechnicalLevelExits(request);
+                        employeeTraning.Training_Status__c = request.result;
+                        update employeeTraning;
+                    }
+                    else if (String.isNotBlank(employeeTraning.Id) && request.action.containsOnly('A')){
+                       return ERROR_HANDLER_ServiceResponse.putErrorCode(FALSE, ERROR_CODE_109, ERROR_MSG_109); 
+                    }
+                    else if(String.isNotBlank(employeeTraning.Id) && request.action.containsOnly('D')){
+                        Delete employeeTraning;
+                    }
+                }
+            }
+        }
+        catch(exception e){
+            e.getmessage();
+        }
+       return response;
+    }
+
+    
+
+
+
+
+
+    global class EmployeeTechnicalLevelRequest{
+        webservice String action; 
+        webservice String organisationCode;
+        webservice String userName;
+        webservice String technicalLevel;
+        webservice String education;
+        webservice String result;
+        
+        /*
+        organisationCode = Account.Dealer_Number__c
+        userName = Contact.Innovam_ID__c
+        technicalLevel = Employee_Technical_Level.Employee_Technical_Level_ID__c
+        education = Training.Training_ID__c
+        result = Employee_Training.Training_Status__c
+        */
+     }
+
+     
+     ////Error Codes
+     public static final String ERROR_CODE_0 = '0';
+     public static final String ERROR_CODE_101 = '101';
+     public static final String ERROR_CODE_102 = '102';
+     public static final String ERROR_CODE_103 = '103';
+     public static final String ERROR_CODE_104 = '104';
+     public static final String ERROR_CODE_105 = '105';
+     public static final String ERROR_CODE_106 = '106';
+     public static final String ERROR_CODE_107 = '107';
+     public static final String ERROR_CODE_108 = '108';
+     public static final String ERROR_CODE_109 = '109';
+
+
+
+     ////Error Messages
+     public static final String ERROR_MSG_0 = System.Label.CL_ET_ERROR_MSG_0;
+     public static final String ERROR_MSG_101 = System.Label.CL_ET_ERROR_MSG_101;
+     public static final String ERROR_MSG_102 = System.Label.CL_ET_ERROR_MSG_102;
+     public static final String ERROR_MSG_103 = System.Label.CL_ET_ERROR_MSG_103;
+     public static final String ERROR_MSG_104 = System.Label.CL_ET_ERROR_MSG_104;
+     public static final String ERROR_MSG_105 = System.Label.CL_ET_ERROR_MSG_105;
+     public static final String ERROR_MSG_106 = System.Label.CL_ET_ERROR_MSG_106;
+     public static final String ERROR_MSG_107 = System.Label.CL_ET_ERROR_MSG_107;
+     public static final String ERROR_MSG_108 = System.Label.CL_ET_ERROR_MSG_108;
+     public static final String ERROR_MSG_109 = System.Label.CL_ET_ERROR_MSG_109;
+  
+}
