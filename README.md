@@ -1,7 +1,8 @@
  WebSerivce to create, update and delete record in EmployeeTraining object.
     InnerClass EmployeeTechnicalLevelRequest recieves the request from AS400 through SOAP. 
     This information is stored in EmployeeTechnicalLevelRequest object.
-
+    
+    Do need to create custom labels used in this webservice in salesforce platform.
     
     Webservice Method is the method (webservice CreateUpdateEmployeeTechnicalLevel) which is called automatically 
     when request is recieved. All the other methods are called from within this method.
